@@ -139,6 +139,13 @@ class YoutubeClient
                 'headers' => [
                     'Authorization' => 'Bearer '.$accessToken,
                     'Content-Type' => 'application/json; charset=UTF-8',
+                    // O Google só habilita CORS na sessão de upload resumível pra
+                    // origem que registrou nesta chamada de abertura — como quem
+                    // abre a sessão é o backend (não o navegador), precisamos
+                    // repassar manualmente a origem do frontend aqui, senão o PUT
+                    // que o navegador faz depois direto pro Google é bloqueado por
+                    // CORS.
+                    'Origin' => env('WEB_ORIGIN', 'http://localhost:3000'),
                 ],
                 'json' => [
                     'snippet' => ['title' => $title, 'description' => ''],
