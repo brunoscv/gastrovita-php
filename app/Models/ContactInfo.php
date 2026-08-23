@@ -9,6 +9,10 @@ class ContactInfo extends Model
 {
     use HasUuid;
 
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
     const CREATED_AT = null;
     const UPDATED_AT = 'updatedAt';
 

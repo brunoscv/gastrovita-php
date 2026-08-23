@@ -9,6 +9,10 @@ class YoutubeAccount extends Model
 {
     use HasUuid;
 
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
     public $timestamps = false;
 
     protected $table = 'youtube_accounts';

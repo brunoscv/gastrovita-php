@@ -1,7 +1,7 @@
 {
-    "name": "laravel/lumen",
-    "description": "The Laravel Lumen Framework.",
-    "keywords": ["framework", "laravel", "lumen"],
+    "name": "brunoscv/gastrovita-php",
+    "description": "API do Gastrovita (Lumen/PHP), migrada da versão original em Node.js/Express.",
+    "keywords": ["gastrovita", "lumen", "api"],
     "license": "MIT",
     "type": "project",
     "require": {

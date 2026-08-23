@@ -6,10 +6,6 @@ use Illuminate\Support\Str;
 
 trait HasUuid
 {
-    public $incrementing = false;
-
-    protected $keyType = 'string';
-
     protected static function bootHasUuid()
     {
         static::creating(function ($model) {

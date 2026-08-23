@@ -9,6 +9,10 @@ class Exam extends Model
 {
     use HasUuid;
 
+    public $incrementing = false;
+
+    protected $keyType = 'string';
+
     public $timestamps = false;
 
     protected $fillable = ['name', 'order'];
