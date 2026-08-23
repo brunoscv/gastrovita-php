@@ -1,0 +1,24 @@
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: gastrovita
+      MYSQL_USER: gastrovita
+      MYSQL_PASSWORD: gastrovita
+      MYSQL_ROOT_PASSWORD: gastrovita
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  adminer:
+    image: adminer:latest
+    restart: unless-stopped
+    depends_on:
+      - mysql
+    ports:
+      - "8083:8080"
+
+volumes:
+  mysql_data:

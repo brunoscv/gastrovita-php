@@ -1,0 +1,23 @@
+# vendor/ é versionado de propósito: o deploy é via FTP e o servidor não roda
+# `composer install`. Ver README/DEPLOY para o passo a passo.
+/.idea
+Homestead.json
+Homestead.yaml
+.env
+.phpunit.result.cache
+
+# Uploads de usuário: a pasta existe (com .gitkeep), o conteúdo não é versionado.
+/public/uploads/*
+!/public/uploads/.gitkeep
+!/public/uploads/doctors
+!/public/uploads/insurances
+!/public/uploads/testimonials
+!/public/uploads/misc
+/public/uploads/doctors/*
+!/public/uploads/doctors/.gitkeep
+/public/uploads/insurances/*
+!/public/uploads/insurances/.gitkeep
+/public/uploads/testimonials/*
+!/public/uploads/testimonials/.gitkeep
+/public/uploads/misc/*
+!/public/uploads/misc/.gitkeep
