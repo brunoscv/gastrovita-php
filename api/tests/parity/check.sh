@@ -65,6 +65,10 @@ docker run --rm --network host -v "$(pwd)":/app -w /app "$IMAGE" php artisan mig
 # O rate-limit (login/contact-submissions) usa Cache::store('file'), que persiste
 # em disco entre execuções do script (e entre testes manuais feitos antes dele).
 # Sem isso, reexecutar o script pode começar já com o limite estourado.
+# Os arquivos de cache são criados como root (o container docker roda como
+# root) — sem o chown, o rm -rf falha silenciosamente em arquivos de execuções
+# anteriores e o rate-limit "vaza" entre execuções do script.
+docker run --rm -v "$(pwd)":/app "$IMAGE" chown -R "$(id -u)":"$(id -g)" /app/storage
 rm -rf storage/framework/cache/data/*
 
 docker run --rm --network host -v "$(pwd)":/app -w /app "$IMAGE" php -r '
@@ -79,7 +83,7 @@ $app->boot();
 
 echo "== Subindo servidor local =="
 docker rm -f "$SERVER_NAME" >/dev/null 2>&1
-docker run -d --name "$SERVER_NAME" --network host -v "$(pwd)":/app -w /app "$IMAGE" php -S 0.0.0.0:8000 -t public >/dev/null
+docker run -d --name "$SERVER_NAME" --network host -v "$(pwd)":/app -w /app "$IMAGE" php -S 0.0.0.0:8000 -t . >/dev/null
 sleep 1
 
 echo
@@ -370,7 +374,7 @@ upload_body=$(echo "$upload_out" | sed '$d')
 assert_status "POST /upload sucesso" 201 "$upload_status"
 UPLOAD_URL=$(echo "$upload_body" | jq -r .url)
 [[ "$UPLOAD_URL" == /uploads/misc/* ]] && pass "url tem o formato esperado ($UPLOAD_URL)" || fail "url tem o formato esperado (veio '$UPLOAD_URL')"
-rm -f "public${UPLOAD_URL}" /tmp/parity-upload-test.txt
+rm -f "${UPLOAD_URL#/}" /tmp/parity-upload-test.txt
 
 echo
 echo "=========================================="

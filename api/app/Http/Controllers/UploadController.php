@@ -23,7 +23,7 @@ class UploadController extends Controller
 
         $filename = $base.'-'.round(microtime(true) * 1000).($extension ? ".{$extension}" : '');
 
-        $destination = base_path("public/uploads/{$folder}");
+        $destination = base_path("uploads/{$folder}");
         $file->move($destination, $filename);
 
         return response()->json(['url' => "/uploads/{$folder}/{$filename}"], 201);
