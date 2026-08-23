@@ -1,0 +1,11 @@
+# Imagem só de desenvolvimento local — não faz parte do deploy (a hospedagem
+# compartilhada não roda Docker). Usada pra rodar artisan/composer/testes sem
+# precisar instalar PHP no host. Ver README.md.
+FROM php:8.1-cli
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libzip-dev libpq-dev unzip git \
+    && docker-php-ext-install pdo pdo_mysql pdo_pgsql \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app

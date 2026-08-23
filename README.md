@@ -33,6 +33,9 @@ Não há PHP instalado fora de container neste ambiente — todo o desenvolvimen
 Docker.
 
 ```bash
+# Constrói a imagem de desenvolvimento (PHP 8.1-cli + pdo_mysql + pdo_pgsql)
+docker build -t gastrovita-php-dev:8.1 -f Dockerfile.dev .
+
 # Sobe o MySQL de desenvolvimento
 docker compose up -d mysql
 
@@ -48,9 +51,19 @@ docker run -d --name gastrovita-php-serve --network host \
   -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php -S 0.0.0.0:8000 -t public
 ```
 
-A imagem `gastrovita-php-dev:8.1` (PHP 8.1-cli + `pdo_mysql` + `pdo_pgsql`) é construída
-localmente a partir do `Dockerfile.dev` — ela existe só pra desenvolvimento, não faz
-parte do deploy.
+## Checklist de paridade (Fase 4)
+
+`tests/parity/check.sh` sobe o servidor local e testa as 52 rotas contra o
+comportamento documentado da API Node original (casos de sucesso e de
+erro/validação). Precisa do MySQL de dev rodando e da imagem `gastrovita-php-dev:8.1`
+já construída:
+
+```bash
+./tests/parity/check.sh
+```
+
+Sai com código de saída != 0 se qualquer verificação falhar, imprimindo o que
+divergiu.
 
 ### Importando os dados do Postgres antigo (uso único)
 
