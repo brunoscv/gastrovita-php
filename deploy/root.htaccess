@@ -1,0 +1,14 @@
+# .htaccess da RAIZ do domínio (public_html/) — o site estático (Next export)
+# fica aqui; a API Lumen mora em public_html/api/, com seu próprio .htaccess
+# (o Apache resolve por diretório, os dois não colidem).
+
+# "Especialidades" era, na origem WordPress, uma segunda listagem de médicos
+# duplicada — consolidamos tudo em /corpo-clinico. Mantemos o redirect pra
+# não perder links/ranking já indexados apontando pra essa URL antiga.
+# (Isto substitui o redirects() do next.config.mjs, que não existe mais em
+# build estático.)
+Redirect 301 /especialidades /corpo-clinico/
+
+# Next export com trailingSlash:true gera pasta+index.html por rota
+# (ex.: /exames/index.html) — o Apache já resolve isso sozinho.
+ErrorDocument 404 /404.html

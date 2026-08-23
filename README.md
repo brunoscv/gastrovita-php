@@ -1,92 +1,95 @@
-# Gastrovita API (PHP/Lumen)
+# Gastrovita — API (PHP/Lumen) + Site (Next.js estático)
 
-Reescrita da API do Gastrovita (originalmente Node.js/Express/Prisma) em PHP com o
-[Lumen](https://lumen.laravel.com/) 10, pensada para rodar em hospedagem compartilhada
-Linux (deploy só via FTP, sem SSH/Composer/processo persistente no servidor).
+Projeto combinado pra rodar inteiro numa hospedagem compartilhada Linux (Locaweb, tipo
+"Hospedagem II Linux"): sem SSH permanente, sem Composer/Node no servidor, sem processo
+persistente. Contém:
 
-O frontend (Next.js, em `../gastrovita/apps/web`) não muda de comportamento: mesmos
-paths, métodos HTTP e formato de resposta JSON da API original — com uma única exceção
-documentada em [`DEPLOY.md`](./DEPLOY.md#exceção-no-frontend-upload-de-vídeo) (upload de
-vídeo passou a ser feito direto do navegador pro YouTube).
+- **`api/`** — reescrita em PHP/Lumen 10 da API original (Node.js/Express/Prisma)
+- **`web/`** — cópia do frontend Next.js, adaptada pra build estático (`next export`) —
+  a versão Node original continua existindo, sem essas adaptações, no repositório
+  [`gastrovita`](https://github.com/brunoscv/gastrovita)
+- **`deploy/`** — script que monta o pacote final pronto pra FTP
 
-## Stack
+As duas versões do frontend foram **definitivamente separadas**: o repositório `gastrovita`
+segue 100% compatível com Node (SSR, ISR, ninguém precisa saber que este projeto existe pra
+mexer nele); a cópia em `web/` aqui é 100% voltada a rodar sem servidor Node, com as
+adaptações descritas em [`DEPLOY.md`](./DEPLOY.md).
 
-- **Framework:** Lumen 10 (PHP ^8.1)
-- **Banco:** MySQL (Eloquent), chaves primárias UUID/cuid em string — preserva o
-  contrato `id: string` que o frontend já espera
-- **Auth:** JWT (`firebase/php-jwt`) num cookie httpOnly, igual ao Node original
-- **YouTube:** chamadas HTTP diretas via Guzzle contra o OAuth2 e a YouTube Data API v3
-  (sem o SDK `google/apiclient`, que sozinho pesava ~200MB de dependências)
-- **`vendor/` é versionado no Git de propósito** — o deploy é por FTP e o servidor não
-  roda `composer install`
+## Como as duas partes se conectam
 
-## Documentação
+Mesmo domínio, dividido por path — isso elimina CORS como problema em vez de configurá-lo:
 
-- [`DEPLOY.md`](./DEPLOY.md) — passo a passo de deploy via FTP, variáveis de ambiente
-  de produção, e as duas variantes de document root
-- Inventário completo da API Node original e o checkpoint de arquitetura: ver os
-  artifacts publicados na conversa que gerou este projeto
+```
+https://gastrovita.com.br/          → site estático (web/out, depois do build)
+https://gastrovita.com.br/api/*     → API Lumen (api/)
+https://gastrovita.com.br/api/uploads/*  → fotos/logos, servidos direto pelo Apache
+```
+
+Detalhes completos, incluindo por que essa estrutura foi escolhida e o que mudou no
+Next.js pra funcionar sem servidor, estão em [`DEPLOY.md`](./DEPLOY.md).
 
 ## Rodando localmente
 
-Não há PHP instalado fora de container neste ambiente — todo o desenvolvimento usa
-Docker.
+Precisa de Docker (pra API/MySQL) e Node 18+ (só pra buildar o frontend — não roda em
+produção).
 
 ```bash
-# Constrói a imagem de desenvolvimento (PHP 8.1-cli + pdo_mysql + pdo_pgsql)
+# --- API (Lumen) ---
+cd api
 docker build -t gastrovita-php-dev:8.1 -f Dockerfile.dev .
-
-# Sobe o MySQL de desenvolvimento
 docker compose up -d mysql
+docker run --rm --network host -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php artisan migrate
+docker run -d --name gastrovita-php-serve --network host -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php -S 0.0.0.0:8000 -t .
+# API em http://localhost:8000
 
-# Instala dependências (só precisa rodar de novo se mexer no composer.json)
-docker run --rm -v "$(pwd)":/work -w /work composer:2 install
-
-# Roda as migrations
-docker run --rm --network host -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 \
-  php artisan migrate
-
-# Sobe o servidor de desenvolvimento em http://localhost:8000
-docker run -d --name gastrovita-php-serve --network host \
-  -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php -S 0.0.0.0:8000 -t public
+# --- Frontend (Next.js) ---
+cd ../web
+npm install
+API_URL=http://localhost:8000 npm run dev
+# Site em http://localhost:3000 (dev mode, com SSR — só o build final é que é estático)
 ```
 
-## Checklist de paridade (Fase 4)
+### Checklist de paridade (Fase 4)
 
-`tests/parity/check.sh` sobe o servidor local e testa as 52 rotas contra o
-comportamento documentado da API Node original (casos de sucesso e de
-erro/validação). Precisa do MySQL de dev rodando e da imagem `gastrovita-php-dev:8.1`
-já construída:
+`api/tests/parity/check.sh` sobe a API local e testa as 52 rotas contra o comportamento
+documentado da API Node original (sucesso e erro/validação):
 
 ```bash
-./tests/parity/check.sh
+cd api && ./tests/parity/check.sh
 ```
 
-Sai com código de saída != 0 se qualquer verificação falhar, imprimindo o que
-divergiu.
+Reseta o banco de dev a cada execução — depois de rodar, reimporte os dados reais com
+o comando abaixo se for continuar testando pelo navegador.
 
 ### Importando os dados do Postgres antigo (uso único)
 
-O projeto Node usava Postgres; a API em PHP usa MySQL. Pra trazer o conteúdo já
-existente (incluindo o que foi editado no painel admin, não só o seed original):
-
 ```bash
+cd api
 docker run --rm --network host -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 \
   php artisan migrate:from-postgres --from="postgresql://usuario:senha@host:porta/banco"
 ```
 
-Use `--dry-run` pra ver quantas linhas seriam importadas de cada tabela sem gravar nada.
+### Gerando o pacote de deploy
+
+```bash
+API_URL=https://gastrovita.com.br/api ./deploy/build-package.sh
+```
+
+Builda o frontend e monta `dist/` exatamente como deve subir por FTP pra
+`public_html/` — ver seção de deploy no `DEPLOY.md` pra pré-requisitos (a API já
+precisa estar publicada e alcançável quando esse comando roda, porque o build faz
+fetch de verdade nela pra gerar as páginas públicas).
 
 ## Estrutura
 
 ```
-app/Http/Controllers/   Um controller por grupo de rota (Doctor, Video, Faq, ...)
-app/Http/Middleware/    RequireAuth, RequireRole, ThrottleByIp, Cors
-app/Models/             Um model Eloquent por tabela, IDs em UUID/string
-app/Support/            Slugify, YoutubeIdExtractor, YoutubeClient (Guzzle)
-app/Console/Commands/   MigrateFromPostgres (ferramenta de uso único)
-database/migrations/    Schema final "squashado" (não o histórico incremental do Prisma)
-routes/web.php          Mesmos paths/métodos/prefixos da API Node original
-deploy/                 Arquivos alternativos pra quando o document root não pode
-                         apontar direto pra public/ — ver DEPLOY.md
+api/                     Lumen — ver estrutura interna em DEPLOY.md
+web/                     Next.js, adaptado pra output:"export"
+  src/lib/useCurrentUser.ts     auth client-side (substitui getServerUser)
+  src/lib/useApiResource.ts     fetch por id client-side (substitui [id]/page.tsx server)
+  src/app/admin/(protected)/*/edit/page.tsx   páginas de edição (id vem de ?id=, não de rota dinâmica)
+deploy/
+  build-package.sh        monta dist/ (web/out/ + api/) pronto pra FTP
+  root.htaccess            .htaccess da raiz do domínio (redirect legado + 404)
+DEPLOY.md                  passo a passo completo de deploy
 ```

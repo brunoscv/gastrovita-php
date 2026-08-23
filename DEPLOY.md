@@ -1,142 +1,140 @@
 # Deploy — Hospedagem Compartilhada Locaweb (FTP)
 
-Este projeto foi feito pra rodar num plano de hospedagem compartilhada Linux (tipo
-"Hospedagem II Linux"): sem SSH permanente, sem Composer no servidor, sem processo
-Node/daemon, deploy só via FTP.
+Site estático (Next.js) + API (PHP/Lumen) na mesma hospedagem compartilhada Linux, sem
+SSH permanente, sem Composer/Node no servidor, sem processo persistente. Testado
+localmente ponta a ponta com Apache real (mesma estrutura de `.htaccess` por diretório
+que a Locaweb usa) antes de escrever este guia — não é teórico.
 
-## 1. O que sobe por FTP
+## 1. A estrutura: mesmo domínio, dividido por path
 
-Sobe **o projeto inteiro**, exceto o que está no `.gitignore` (que já reflete o que
-não deve ir: `.env`, cache do Laravel em `storage/framework/*`, etc.). Em particular:
-
-- `vendor/` **sobe** — foi gerado localmente (`composer install --no-dev
-  --optimize-autoloader`) porque o servidor não roda `composer install`.
-- `public/uploads/*` — sobe a estrutura de pastas; o conteúdo real (fotos, logos)
-  também sobe na primeira vez, mas depois disso é a aplicação que grava ali (uploads
-  feitos pelo painel admin). Nunca apague essa pasta num redeploy.
-- `storage/` sobe com as subpastas vazias (`logs`, `framework/cache/data`,
-  `framework/views`) — são gravadas em runtime, mas as pastas precisam existir e ter
-  permissão de escrita (chmod 775 costuma bastar; hospedagem compartilhada normalmente
-  já cuida disso automaticamente por dono do processo PHP).
-- `database/migrations/` sobe, mas **não precisa rodar migration nenhuma no
-  servidor** — o schema já foi criado direto no MySQL de produção (ver seção 4).
-
-Antes de gerar o pacote final pra FTP, rode localmente:
-
-```bash
-docker run --rm -v "$(pwd)":/work -w /work composer:2 install --no-dev --optimize-autoloader
+```
+public_html/
+├── index.html, _next/, corpo-clinico/, ...   ← site estático (saída de web/out)
+├── .htaccess                                  ← deploy/root.htaccess
+└── api/                                       ← conteúdo de api/ (Lumen)
+    ├── index.php, .htaccess
+    ├── app/, bootstrap/, database/, routes/, vendor/, storage/
+    ├── uploads/                                ← vira /api/uploads/* pro navegador
+    └── .env                                    ← só no servidor, nunca sobe por FTP
 ```
 
-Isso remove `fakerphp/faker`, `mockery/mockery` e `phpunit/phpunit` do `vendor/`
-(são só de desenvolvimento), deixando o pacote menor pro FTP.
+Isso faz toda chamada `fetch("/api/...")` do navegador ser **same-origin** — mesmo
+esquema, host e porta do site. Consequência direta: **CORS não precisa ser configurado**
+pro fluxo funcionar (o middleware CORS do Lumen continua existindo como camada
+defensiva, não é o que faz o same-origin funcionar), e o cookie de sessão
+(`gastrovita_token`, httpOnly, `SameSite=Lax`) funciona exatamente como já está, sem
+precisar de `SameSite=None` nem `Domain` explícito.
 
-## 2. Onde fica o `.env` de produção
+Os dois `.htaccess` não colidem: o Apache resolve por diretório físico primeiro, então
+`public_html/.htaccess` nunca intercepta requests que já caem dentro de
+`public_html/api/`.
 
-Um único `.env` na raiz do projeto (mesmo nível de `artisan`, `composer.json`), **fora**
-de `public/` em ambas as variantes de document root da seção 3 — nunca deixe o `.env`
-acessível via HTTP. Baseie-se em `.env.example`, com estas diferenças pra produção:
+## 2. Por que o frontend precisou de mudanças de código
+
+O Next.js original usa Server Components com `cookies()` pra checar login e `fetch`
+com `revalidate`/`no-store` pra buscar dados a cada request — isso roda num processo
+Node a cada acesso. Hospedagem compartilhada não roda Node, então o frontend em `web/`
+foi buildado como **export estático** (`output: "export"`), que gera HTML uma vez, no
+build. Duas consequências reais, já implementadas:
+
+- **O admin virou um app client-side.** `(protected)/layout.tsx` agora busca
+  `/api/auth/me` no navegador (via `useCurrentUser()`) em vez de checar cookie no
+  servidor; as páginas de edição (`doctors/edit`, `videos/edit` etc.) buscam o registro
+  pelo `?id=` da query string via `useApiResource()`, em vez de rota dinâmica
+  `[id]` renderizada no servidor — rota dinâmica exigiria `generateStaticParams`
+  enumerando todo `id` existente no build, o que quebraria pra registros criados depois.
+- **O conteúdo público fica congelado até o próximo build.** Sem ISR, editar um médico
+  no painel não aparece sozinho no site — precisa rodar `deploy/build-package.sh` de
+  novo e subir o resultado. O painel admin em si funciona na hora (fala direto com a
+  API); só as páginas públicas (home, corpo clínico, exames, etc.) é que exigem rebuild.
+
+## 3. O que sobe por FTP
+
+Rode `deploy/build-package.sh` (ver README.md) — ele gera `dist/` com exatamente o que
+subir, já excluindo `.env`, `.git`, `node_modules` e as pastas de dev
+(`tests/`, `Dockerfile.dev`, `docker-compose.yml`). Suba o **conteúdo** de `dist/` pra
+`public_html/`.
+
+- `dist/api/vendor/` sobe — foi gerado localmente
+  (`composer install --no-dev --optimize-autoloader`) porque o servidor não roda
+  `composer install`.
+- `dist/api/uploads/*` — sobe a estrutura de pastas; depois disso é a aplicação que
+  grava ali (uploads feitos pelo painel). **Nunca apague essa pasta num redeploy.**
+- `dist/api/storage/` precisa ter permissão de escrita pro processo PHP do servidor
+  (logs e cache de rate-limit são gravados ali em runtime). Em teste local via Docker
+  isso exigiu `chmod` manual por causa de mismatch de usuário entre o bind mount e o
+  `www-data` do container — na Locaweb isso normalmente não é problema porque o PHP
+  roda como o dono da própria conta (o mesmo usuário do FTP), mas **confirme depois do
+  primeiro deploy** fazendo login no admin; se dor 500 mencionando `storage/logs`,
+  ajuste a permissão da pasta pelo gerenciador de arquivos do painel.
+
+## 4. Onde fica o `.env` de produção
+
+Um único `dist/api/.env`, criado **direto no servidor** (nunca sobe por FTP dentro do
+pacote — o script de build já exclui). Baseie-se em `api/.env.example`, com estas
+diferenças pra produção:
 
 | Variável | Produção |
 |---|---|
 | `APP_ENV` | `production` |
-| `APP_DEBUG` | `false` (nunca deixe `true` em produção — vaza stack trace) |
-| `APP_URL` | URL final do domínio da API |
-| `DB_*` | credenciais do MySQL fornecidas pela Locaweb (host geralmente **não** é `127.0.0.1`, é algo como `mysql.suaconta.hospedagemdesites.ws` — confirme no painel) |
-| `WEB_ORIGIN` | URL final do frontend Next.js (ex.: `https://www.gastrovita.com.br`) |
-| `JWT_SECRET` | gere um novo valor aleatório longo (ex.: `openssl rand -hex 32`) — **não** reaproveite o valor de dev |
-| `YOUTUBE_CLIENT_ID` / `YOUTUBE_CLIENT_SECRET` / `YOUTUBE_REDIRECT_URI` | credenciais do Google Cloud Console cadastradas pro domínio final; o redirect URI tem que bater exatamente |
+| `APP_DEBUG` | `false` |
+| `APP_URL` | `https://gastrovita.com.br/api` |
+| `DB_*` | credenciais do MySQL da Locaweb (host geralmente não é `127.0.0.1` — confirme no painel) |
+| `WEB_ORIGIN` | `https://gastrovita.com.br` (usado no CORS defensivo e nas URLs de redirect pós-OAuth do YouTube) |
+| `JWT_SECRET` | gere um novo valor aleatório longo (`openssl rand -hex 32`) — não reaproveite o de dev |
+| `YOUTUBE_CLIENT_ID` / `SECRET` / `REDIRECT_URI` | credenciais do Google Cloud Console pro domínio final; `YOUTUBE_REDIRECT_URI` = `https://gastrovita.com.br/api/youtube/callback` |
 
-## 3. Versão do PHP no painel
+## 5. Versão do PHP e banco
 
-Configure **PHP 8.1 ou superior** no painel da Locaweb (cPanel costuma ter um seletor
-de versão de PHP por domínio). O projeto foi desenvolvido e testado contra PHP 8.1.34.
+- PHP **8.1 ou superior** no painel da Locaweb (desenvolvido e testado contra 8.1.34).
+- MySQL: crie o banco/usuário no painel, rode as migrations localmente apontando pro
+  MySQL de produção (se a Locaweb permitir conexão externa), ou localmente contra um
+  MySQL espelho e importe o dump via phpMyAdmin:
+  ```bash
+  cd api
+  DB_HOST=<host-producao> DB_PORT=3306 DB_DATABASE=<banco> DB_USERNAME=<user> DB_PASSWORD=<senha> \
+    docker run --rm --network host -e DB_HOST -e DB_PORT -e DB_DATABASE -e DB_USERNAME -e DB_PASSWORD \
+    -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php artisan migrate --force
+  ```
+- Dados existentes do Postgres do projeto Node: `php artisan migrate:from-postgres`
+  (ver README.md), rodado do mesmo jeito contra o MySQL de produção (ou local + dump).
 
-## 4. Banco de dados
+## 6. Ordem de deploy (primeira vez)
 
-1. Crie o banco MySQL e o usuário pelo painel da Locaweb.
-2. Rode as migrations **localmente**, apontando pro MySQL de produção (a maioria dos
-   planos Locaweb permite conexão externa ao MySQL por IP liberado — confirme no
-   painel; se não permitir, rode as migrations contra um MySQL local idêntico e depois
-   exporte/importe o dump via phpMyAdmin):
-   ```bash
-   DB_HOST=<host-producao> DB_PORT=3306 DB_DATABASE=<banco> DB_USERNAME=<user> DB_PASSWORD=<senha> \
-     docker run --rm --network host -e DB_HOST -e DB_PORT -e DB_DATABASE -e DB_USERNAME -e DB_PASSWORD \
-     -v "$(pwd)":/app -w /app gastrovita-php-dev:8.1 php artisan migrate --force
-   ```
-3. Importe os dados existentes do Postgres do projeto Node (ver `README.md`, seção
-   "Importando os dados do Postgres antigo") — rode contra o MySQL de produção do
-   mesmo jeito, ou localmente e depois exporte um `.sql` (`mysqldump`) pra importar
-   via phpMyAdmin se a Locaweb não permitir conexão externa direta.
+1. Banco: crie/migre/importe (seção 5) — sem precisar do domínio final ainda.
+2. Suba `dist/api/` (sem `dist/api/.env`) pra `public_html/api/`, crie o `.env` de
+   produção direto no servidor (seção 4).
+3. Confirme `https://gastrovita.com.br/api/health` → `{"ok":true}` antes de seguir.
+4. Rode `API_URL=https://gastrovita.com.br/api ./deploy/build-package.sh` — isso builda
+   o frontend contra a API já publicada (o build faz fetch de verdade nela pra gerar as
+   páginas) e monta `dist/` de novo, agora com `dist/index.html` etc.
+5. Suba o restante de `dist/` (tudo exceto `api/`, que já está lá) pra `public_html/`.
+6. Teste o login do admin em `https://gastrovita.com.br/admin/login`.
 
-## 5. Document root — duas variantes
-
-Você não sabe ainda qual dessas o painel da Locaweb permite. Escolha uma só.
-
-### Variante A — domínio aponta direto pra `public/` (preferível)
-
-Se o painel permitir configurar o document root do domínio/subdomínio apontando pra
-dentro da pasta do projeto (`.../gastrovita-php/public`), não precisa mexer em nada:
-suba o projeto inteiro como está, aponte o document root pra `public/`, pronto. Os
-arquivos `public/index.php` e `public/.htaccess` já estão prontos pra isso.
-
-### Variante B — domínio só aponta pra `public_html/` (raiz)
-
-Se o painel só permite apontar o domínio pra `public_html/` e você não consegue
-apontar pra uma subpasta:
-
-1. Suba o projeto inteiro pra uma pasta **fora** de `public_html` (ex.: um diretório
-   `gastrovita-api/` no mesmo nível), **ou** direto dentro de `public_html/` mesmo
-   (menos ideal, mas funciona já que o `.env` não é servido por HTTP de qualquer jeito
-   — o Apache só serve o que casar com as regras do `.htaccess`).
-2. Copie o conteúdo de `deploy/variant-b-document-root-na-raiz/` (`index.php` e
-   `.htaccess`) pra dentro de `public_html/`, **sobrescrevendo** o `index.php` e
-   `.htaccess` que vieram de `public/` nessa cópia.
-3. Copie também o conteúdo de `public/uploads/` pra `public_html/uploads/` (ou ajuste
-   o caminho conforme onde a pasta do projeto ficou).
-4. Esse `index.php` alternativo já aponta `require __DIR__.'/bootstrap/app.php'` (sem
-   subir um nível, já que ele passa a ficar ao lado de `bootstrap/`, não mais dentro de
-   `public/`).
-
-## 6. O que foi adaptado por causa da hospedagem compartilhada
+## 7. O que foi adaptado por causa da hospedagem compartilhada
 
 | Item | Adaptação | Por quê |
 |---|---|---|
-| Upload de vídeo (`POST /videos/upload`) | Passou a devolver uma URL de upload resumível do YouTube em vez de receber o arquivo — o navegador do admin envia o arquivo direto pro Google | Vídeos de até 2GB não cabem nos limites de `upload_max_filesize`/`max_execution_time` de hospedagem compartilhada, e não dá pra garantir que o painel permita alterar esses limites |
-| Rate limiting (login e formulário de contato) | Contador em `Cache::store('file')` do Lumen em vez de memória de processo (`express-rate-limit`) | PHP em hospedagem compartilhada roda como processos curtos (PHP-FPM/CGI) que não mantêm estado entre requests; arquivo em disco sobrevive sem precisar de Redis |
-| Cliente do YouTube | Chamadas HTTP diretas via Guzzle em vez do SDK `google/apiclient` | O SDK oficial sozinho baixa ~200MB de definições de *todas* as APIs do Google (Sheets, Drive, Calendar...); numa `vendor/` versionada + FTP isso é inviável. As únicas chamadas usadas (OAuth2 token exchange, `channels.list`, upload resumível) são simples o bastante pra fazer direto |
-| Banco de dados | PostgreSQL → MySQL | Hospedagem compartilhada Locaweb não costuma oferecer Postgres gerenciado; MySQL é o padrão do plano |
-| IDs | Mantidos como string (UUID no lugar do cuid do Prisma) | O Eloquent, por padrão, usa inteiro autoincremental; o frontend espera `id: string` em todo lugar — preservar string evita qualquer ajuste no Next.js |
-| `vendor/` do Composer | Versionado no Git | O servidor não roda `composer install`; o pacote pronto tem que ir por FTP |
-| Filas, workers, WebSockets | Não existiam no Node original — nada a adaptar | Confirmado por busca no código-fonte original: nenhuma ocorrência |
-| Envio de e-mail | Mantido ausente (decisão consciente, confirmada com o usuário) | O Node original também nunca enviava e-mail (nem notificação de contato, nem recuperação de senha) |
+| Frontend (Next.js) | Export estático (`output:"export"`), admin virou client-side, sem ISR | Sem Node no servidor — coberto em detalhe na seção 2 |
+| Upload de vídeo (`POST /videos/upload`) | Devolve uma URL de upload resumível do YouTube; o navegador envia o arquivo direto pro Google | Vídeos de até 2GB não cabem nos limites de upload/execução de hospedagem compartilhada |
+| Rate limiting (login e formulário de contato) | Contador em `Cache::store('file')` do Lumen em vez de memória de processo | PHP compartilhado roda como processos curtos, sem estado entre requests |
+| Cliente do YouTube | Chamadas HTTP diretas via Guzzle em vez do SDK `google/apiclient` | O SDK sozinho baixa ~200MB de definições de todas as APIs do Google — inviável numa `vendor/` versionada + FTP |
+| Banco de dados | PostgreSQL → MySQL | Padrão da hospedagem compartilhada Locaweb |
+| IDs | String (UUID) em vez de inteiro autoincremental | Preserva o contrato `id: string` que o frontend já espera |
+| `vendor/` do Composer | Versionado / empacotado por `build-package.sh` | O servidor não roda `composer install` |
+| CORS entre front e API | Eliminado por estrutura (mesmo domínio, `/api`) em vez de configurado | Ver seção 1 |
+| Filas, workers, WebSockets | Não existiam no Node original | Confirmado por busca no código-fonte — nada a adaptar |
+| Envio de e-mail | Mantido ausente (decisão consciente) | O Node original também nunca enviava e-mail |
 
-## 7. Exceção no frontend: upload de vídeo
+## 8. Se um dia o frontend sair desse domínio
 
-Esta é a única rota cujo **contrato** muda de verdade (todas as outras 51 rotas
-mantêm path, método e formato de request/response idênticos ao Node original).
+Caso decida hospedar o frontend em Vercel (ou outro host Node) no futuro, deixa de ser
+same-origin:
 
-**Antes (Node):** `POST /videos/upload` recebia o arquivo (`multipart/form-data`,
-campo `file`) e devolvia o vídeo já criado.
+- Cookie precisa de `SameSite=None; Secure`
+- CORS no Lumen passa a ser essencial — `WEB_ORIGIN` tem que bater exatamente com a
+  nova origem
+- As chamadas `fetch("/api/...")` relativas no admin precisam virar URL completa da API
+- Ganha de volta SSR/ISR de verdade — as adaptações da seção 2 deixam de ser necessárias
 
-**Agora (PHP):**
-1. `POST /videos/upload` recebe `{ "title": "...", "published": true }` (JSON) e
-   devolve `{ "uploadUrl": "<url de sessão resumível do YouTube>" }`.
-2. O navegador do admin faz um `PUT` do arquivo de vídeo direto pra essa `uploadUrl`
-   (fora do domínio da API — vai direto pro Google). A resposta desse `PUT` já vem com
-   o recurso de vídeo criado no YouTube, incluindo o `id` (o `youtubeId`).
-3. O frontend chama `POST /videos` (rota que já existe e não mudou) com
-   `{ title, youtubeId, thumbnailUrl?, order?, published }` pra criar o registro no
-   banco — mesma validação, mesmo formato de resposta de sempre.
-
-**O que precisa mudar no Next.js:** só o componente de upload de vídeo do admin
-(`apps/web/src/app/admin/(protected)/videos/VideoForm.tsx`), pra fazer essas 3
-chamadas em sequência em vez de um único `POST` multipart. Nenhuma outra tela do
-admin, nem o site público, precisa de ajuste nenhum além da variável de URL base da
-API abaixo.
-
-## 8. O que muda no Next.js (fora a exceção acima)
-
-Só a variável de ambiente `API_URL` (usada em `apps/web/src/lib/api.ts`,
-`apps/web/src/lib/session.ts`, nas páginas do admin, e no `next.config.mjs` pro
-proxy `/api/:path*`) — aponte pra URL final da API em PHP. Nenhuma rota muda de path,
-método ou formato de resposta.
+O backend Lumen não muda nesse cenário, só a configuração de CORS/cookie.
