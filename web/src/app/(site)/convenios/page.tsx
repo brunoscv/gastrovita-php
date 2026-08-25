@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
-import { apiGet, uploadUrl, type Insurance } from "@/lib/api";
+import { apiGet, type Insurance } from "@/lib/api";
+import InsurancesSection from "./InsurancesSection";
 import CurveDivider from "@/components/CurveDivider";
 
 const WHATSAPP_AGENDAR =
@@ -44,21 +45,7 @@ export default async function ConveniosPage() {
 
       <section className="bg-[#f2f4fb]">
         <div className="mx-auto max-w-6xl px-4 py-16">
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5">
-            {insurances.map((insurance) => (
-              <div key={insurance.id} className="relative aspect-[3/2] rounded-[10px] overflow-hidden">
-                {insurance.logoUrl && (
-                  <Image
-                    src={uploadUrl(insurance.logoUrl)!}
-                    alt={insurance.name}
-                    fill
-                    className="object-cover"
-                    sizes="200px"
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+          <InsurancesSection initialInsurances={insurances} />
         </div>
       </section>
     </div>

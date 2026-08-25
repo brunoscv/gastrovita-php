@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { apiGet, type Video } from "@/lib/api";
-import VideosGrid from "@/components/VideosGrid";
+import VideosSection from "./VideosSection";
 import CurveDivider from "@/components/CurveDivider";
 
 export const metadata: Metadata = {
@@ -27,11 +27,7 @@ export default async function VideosPage() {
 
       <section className="bg-white">
         <div className="mx-auto max-w-6xl px-4 py-16">
-          {videos.length > 0 ? (
-            <VideosGrid videos={videos} />
-          ) : (
-            <p className="text-center text-slate-500">Nenhum vídeo publicado no momento.</p>
-          )}
+          <VideosSection initialVideos={videos} />
         </div>
       </section>
     </div>

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { apiGet, type Testimonial } from "@/lib/api";
-import TestimonialsGrid from "@/components/TestimonialsGrid";
+import TestimonialsSection from "./TestimonialsSection";
 import CurveDivider from "@/components/CurveDivider";
 
 export const metadata: Metadata = {
@@ -27,11 +27,7 @@ export default async function DepoimentosPage() {
 
       <section className="bg-[#f2f4fb]">
         <div className="mx-auto max-w-6xl px-4 py-16">
-          {testimonials.length > 0 ? (
-            <TestimonialsGrid testimonials={testimonials} />
-          ) : (
-            <p className="text-center text-slate-500">Nenhum depoimento publicado no momento.</p>
-          )}
+          <TestimonialsSection initialTestimonials={testimonials} />
         </div>
       </section>
     </div>

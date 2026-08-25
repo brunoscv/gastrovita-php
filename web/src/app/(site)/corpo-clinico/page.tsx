@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { apiGet, type Doctor } from "@/lib/api";
-import DoctorsGrid from "@/components/DoctorsGrid";
+import DoctorsSection from "./DoctorsSection";
 import CurveDivider from "@/components/CurveDivider";
 
 export const metadata: Metadata = {
@@ -40,11 +40,7 @@ export default async function CorpoClinicoPage() {
 
       <section className="bg-white">
         <div className="mx-auto max-w-6xl px-4 py-[29px]">
-          {doctors.length > 0 ? (
-            <DoctorsGrid doctors={doctors} />
-          ) : (
-            <p className="text-center text-slate-500">Nenhum médico cadastrado no momento.</p>
-          )}
+          <DoctorsSection initialDoctors={doctors} />
         </div>
       </section>
     </div>

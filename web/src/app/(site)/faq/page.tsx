@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { apiGet, type Faq } from "@/lib/api";
-import FaqAccordion from "@/components/FaqAccordion";
+import FaqSection from "./FaqSection";
 import CurveDivider from "@/components/CurveDivider";
 
 export const metadata: Metadata = {
@@ -10,7 +10,6 @@ export const metadata: Metadata = {
 
 export default async function FaqPage() {
   const faqs = await apiGet<Faq[]>("/faqs").catch(() => []);
-  const sorted = [...faqs].sort((a, b) => a.order - b.order);
 
   return (
     <div>
@@ -27,7 +26,7 @@ export default async function FaqPage() {
       </section>
 
       <section className="mx-auto max-w-3xl px-4 py-16">
-        <FaqAccordion faqs={sorted} />
+        <FaqSection initialFaqs={faqs} />
       </section>
     </div>
   );

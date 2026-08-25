@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { apiGet, type Exam } from "@/lib/api";
+import ExamsSection from "./ExamsSection";
 import CurveDivider from "@/components/CurveDivider";
 
 export const metadata: Metadata = {
@@ -37,16 +38,7 @@ export default async function ExamesPage() {
       </section>
 
       <section className="mx-auto max-w-5xl px-4 py-16">
-        <div className="flex flex-wrap gap-3 justify-center">
-          {exams.map((exam) => (
-            <span
-              key={exam.id}
-              className="font-body bg-gold text-white font-semibold text-sm rounded-[10px] shadow-button px-5 py-[0.6em]"
-            >
-              {exam.name}
-            </span>
-          ))}
-        </div>
+        <ExamsSection initialExams={exams} />
       </section>
     </div>
   );

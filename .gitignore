@@ -33,3 +33,6 @@
 
 # --- pacote final de deploy (gerado por deploy/build-package.sh, não versionado) ---
 /dist
+
+# --- dumps de banco (contém dados reais/hash de senha, nunca versionar) ---
+/deploy/out
