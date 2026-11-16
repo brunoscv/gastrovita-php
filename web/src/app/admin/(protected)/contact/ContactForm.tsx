@@ -7,6 +7,7 @@ interface ContactInfo {
   whatsapp: string | null;
   email: string | null;
   address: string | null;
+  hours: string | null;
 }
 
 export default function ContactForm({ initial }: { initial: ContactInfo | null }) {
@@ -14,6 +15,7 @@ export default function ContactForm({ initial }: { initial: ContactInfo | null }
   const [whatsapp, setWhatsapp] = useState(initial?.whatsapp ?? "");
   const [email, setEmail] = useState(initial?.email ?? "");
   const [address, setAddress] = useState(initial?.address ?? "");
+  const [hours, setHours] = useState(initial?.hours ?? "");
 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export default function ContactForm({ initial }: { initial: ContactInfo | null }
         whatsapp: whatsapp || null,
         email: email || null,
         address: address || null,
+        hours: hours || null,
       };
       const res = await fetch("/api/contact", {
         method: "PUT",
@@ -84,6 +87,18 @@ export default function ContactForm({ initial }: { initial: ContactInfo | null }
         <div>
           <label className={label}>Endereço</label>
           <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={3} className={input} />
+        </div>
+
+        <div>
+          <label className={label}>Horário de funcionamento</label>
+          <textarea
+            value={hours}
+            onChange={(e) => setHours(e.target.value)}
+            rows={3}
+            placeholder={"Seg - Sex: 07 às 19h\nSábado: 07 às 13h"}
+            className={input}
+          />
+          <p className="text-xs text-argon-secondary mt-1">Cada linha aparece numa linha separada na página de contato.</p>
         </div>
 
         <button
